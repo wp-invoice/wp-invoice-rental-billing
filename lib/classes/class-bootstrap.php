@@ -39,10 +39,37 @@ namespace UsabilityDynamics\WPI_RB {
         add_filter( 'wpi_email_templates', array( $this, 'add_email_templates' ) );
         add_filter( 'wpi_rb_late_fee_notification_template', array( $this, 'process_notification_template' ) );
         add_filter( 'wpi_custom_meta', array( $this, 'allow_meta_keys' ) );
+        add_action( 'wp_ajax_wpi_email_tracking', array( $this, 'email_tracker' ) );
+        add_action( 'wp_ajax_nopriv_wpi_email_tracking', array( $this, 'email_tracker' ) );
 
         if ( function_exists('ud_get_wp_invoice_irb') ) {
           add_action( ud_get_wp_invoice_irb()->cron_event_slug, array($this, 'trigger') );
         }
+      }
+
+      /**
+       *
+       */
+      private function image_die() {
+        header('Content-type: image/png');
+        echo gzinflate(base64_decode('6wzwc+flkuJiYGDg9fRwCQLSjCDMwQQkJ5QH3wNSbCVBfsEMYJC3jH0ikOLxdHEMqZiTnJCQAOSxMDB+E7cIBcl7uvq5rHNKaAIA'));
+        die();
+      }
+
+      /**
+       *
+       */
+      public function email_tracker() {
+
+        if ( empty( $_GET['i'] ) || !is_numeric( $_GET['i'] ) ) $this->image_die();
+
+        $the_invoice = new \WPI_Invoice();
+        $the_invoice->load_invoice(array('id' => absint( $_GET['i'] )));
+        $success = "Notification has been opened by {$_SERVER['REMOTE_ADDR']}";
+        $the_invoice->add_entry("attribute=invoice&note=$success&type=update");
+
+        $this->image_die();
+
       }
 
       /**
@@ -151,7 +178,9 @@ namespace UsabilityDynamics\WPI_RB {
             if ( !DOING_CRON ) return false;
 
             //** Setup, and send our e-mail */
-            $headers = "From: " . get_bloginfo() . " <" . get_bloginfo( 'admin_email' ) . ">\r\n";
+            $headers = array(
+                "From: " . get_bloginfo() . " <" . get_bloginfo( 'admin_email' ) . ">\r\n"
+            );
             $message = html_entity_decode( $template->ary['NotificationContent'], ENT_QUOTES, 'UTF-8' );
             $subject = html_entity_decode( $template->ary['NotificationSubject'], ENT_QUOTES, 'UTF-8' );
             $to = $template->invoice['user_email'];
@@ -159,7 +188,7 @@ namespace UsabilityDynamics\WPI_RB {
             //** Validate for empty fields data */
             if ( empty( $to ) || empty( $subject ) || empty( $message ) ) return false;
 
-            if ( wp_mail( $to, $subject, $message, $headers ) ) {
+            if ( wp_mail( $to, $subject, apply_filters( 'wpi_notification_message', $message, $to, $subject, absint($template->invoice['invoice_id']) ), apply_filters( 'wpi_notification_headers', $headers, $to, $subject, absint($template->invoice['invoice_id']) ) ) ) {
               update_post_meta( $template->invoice['ID'], 'rb_late_fee_notified', 1 );
               $_invoice = new \WPI_Invoice();
               $_invoice->load_invoice( array( 'id' => $template->invoice['ID'] ) );
@@ -327,7 +356,7 @@ namespace UsabilityDynamics\WPI_RB {
 
         $fee = $wpi_settings['fees'][$gateway];
 
-        if ( empty( $fee ) ) wp_send_json_success();
+        if ( empty( $fee ) ) wp_send_json_error();
 
         $invoice = new \WPI_Invoice();
         $invoice->load_invoice(array('id' => $invoice_id));
