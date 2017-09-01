@@ -41,6 +41,8 @@ namespace UsabilityDynamics\WPI_RB {
         add_filter( 'wpi_custom_meta', array( $this, 'allow_meta_keys' ) );
         add_action( 'wp_ajax_wpi_email_tracking', array( $this, 'email_tracker' ) );
         add_action( 'wp_ajax_nopriv_wpi_email_tracking', array( $this, 'email_tracker' ) );
+        add_filter( 'wpi_notification_message', array( $this, 'notification_message' ), 10, 4 );
+        add_filter( 'wpi_notification_headers', array( $this, 'notification_headers' ), 10, 4 );
 
         if ( function_exists('ud_get_wp_invoice_irb') ) {
           add_action( ud_get_wp_invoice_irb()->cron_event_slug, array($this, 'trigger') );
@@ -48,7 +50,31 @@ namespace UsabilityDynamics\WPI_RB {
       }
 
       /**
-       *
+       * @param $message
+       * @param $to
+       * @param $subject
+       * @param $invoiceID
+       * @return string
+       */
+      public function notification_message( $message, $to, $subject, $invoiceID ) {
+        $tracking_pixel = '<img src="'.admin_url('admin-ajax.php?action=wpi_email_tracking&i='.$invoiceID.'&s='.base64_encode($subject)).'">';
+        return wpautop($message).$tracking_pixel;
+      }
+
+      /**
+       * @param $headers
+       * @param $to
+       * @param $subject
+       * @param $invoiceID
+       * @return mixed
+       */
+      public function notification_headers( $headers, $to, $subject, $invoiceID ) {
+        $headers[] = 'Content-Type: text/html';
+        return $headers;
+      }
+
+      /**
+       * Render 1 pixel image
        */
       private function image_die() {
         header('Content-type: image/png');
@@ -57,16 +83,20 @@ namespace UsabilityDynamics\WPI_RB {
       }
 
       /**
-       *
+       * Add log item to invoice about tracked email
        */
       public function email_tracker() {
 
         if ( empty( $_GET['i'] ) || !is_numeric( $_GET['i'] ) ) $this->image_die();
+        if ( empty( $_GET['s'] ) ) $this->image_die();
 
-        $the_invoice = new \WPI_Invoice();
-        $the_invoice->load_invoice(array('id' => absint( $_GET['i'] )));
-        $success = "Notification has been opened by {$_SERVER['REMOTE_ADDR']}";
-        $the_invoice->add_entry("attribute=invoice&note=$success&type=update");
+        if ( false === get_transient( $trans_key = md5( $_GET['i'].$_GET['s'] ) ) ) {
+          $the_invoice = new \WPI_Invoice();
+          $the_invoice->load_invoice(array('id' => absint( $_GET['i'] )));
+          $success = "Notification \"".base64_decode($_GET['s'])."\" has been opened by {$_SERVER['REMOTE_ADDR']}";
+          $the_invoice->add_entry("attribute=invoice&note=$success&type=update");
+          set_transient( $trans_key, 1, 6 * HOUR_IN_SECONDS );
+        }
 
         $this->image_die();
 
