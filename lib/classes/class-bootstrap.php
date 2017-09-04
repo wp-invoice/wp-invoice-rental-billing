@@ -399,7 +399,7 @@ namespace UsabilityDynamics\WPI_RB {
 
         $invoice->calculate_totals();
 
-        $current_amount = (float)$invoice->data['net'];
+        $current_amount = $old_amount = (float)$invoice->data['net'];
 
         if ( strstr( $fee, '%' ) ) {
           $current_amount = $current_amount + ( $current_amount / 100 * (float)str_replace( '%', '', $fee ) );
@@ -407,7 +407,13 @@ namespace UsabilityDynamics\WPI_RB {
           $current_amount += (float)$fee;
         }
 
-        wp_send_json_success( number_format( (float)$current_amount, 2, '.', '' ) );
+        $return = array(
+          'old_amount' => number_format( (float)$old_amount, 2, '.', '' ),
+          'new_amount' => number_format( (float)$current_amount, 2, '.', '' ),
+          'fee' => number_format( (float)($current_amount-$old_amount), 2, '.', '' )
+        );
+
+        wp_send_json_success( $return );
       }
 
       /**
@@ -419,15 +425,19 @@ namespace UsabilityDynamics\WPI_RB {
         ?>
           <script type="text/javascript">
             jQuery(document).ready(function(){
+              jQuery( '#convenience-fee-item' ).remove();
+              jQuery( '#convenience-fee-total' ).remove();
               jQuery.post(wpi_ajax.url, {
                 action: 'recalculate_fee',
                 g: jQuery( '#wpi_form_type', 'form.online_payment_form' ).val(),
                 i: jQuery( '#wpi_form_invoice_id', 'form.online_payment_form' ).val()
               }).then(function(res){
                 if ( res.success ) {
-                  jQuery( '#payment_amount' ).val( parseFloat( res.data ) );
+                  jQuery( '#payment_amount' ).val( parseFloat( res.data.new_amount ) );
                   jQuery( '#cc_pay_button', 'form.online_payment_form' ).append(' including fee.');
-                  jQuery( '#pay_button_value', 'form.online_payment_form' ).html( parseFloat( res.data ) );
+                  jQuery( '#pay_button_value', 'form.online_payment_form' ).html( res.data.new_amount );
+                  jQuery( '#wp_invoice_itemized_table tfoot' ).append('<tr id="convenience-fee-item" class="wpi_subtotal"><td class="bottom_line_title">Convenience Fee for selected payment method</td><td class="wpi_money">$'+res.data.fee+'</td></tr>');
+                  jQuery( '#wp_invoice_itemized_table tfoot' ).append('<tr id="convenience-fee-total" class="wpi_subtotal"><td class="bottom_line_title">Total including fee</td><td class="wpi_money">$'+res.data.new_amount+'</td></tr>');
                 }
               });
             });
