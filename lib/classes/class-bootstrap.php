@@ -25,7 +25,7 @@ namespace UsabilityDynamics\WPI_RB {
       protected static $instance = null;
       
       /**
-       * Instantaite class.
+       * init class.
        */
       public function init() {
         
@@ -47,6 +47,8 @@ namespace UsabilityDynamics\WPI_RB {
         if ( function_exists('ud_get_wp_invoice_irb') ) {
           add_action( ud_get_wp_invoice_irb()->cron_event_slug, array($this, 'trigger') );
         }
+
+        // For debug only add_action( 'init', array( $this, 'trigger' ) );
       }
 
       /**
@@ -176,19 +178,16 @@ namespace UsabilityDynamics\WPI_RB {
 
         $invoices_query = new \WP_Query(array(
           'post_type' => 'wpi_object',
-          'post_status' => 'any',
+          'post_status' => 'active',
           'date_query' => array(
             'before' => "now -{$days} days"
           ),
           'meta_query' => array(
               'relation' => 'AND',
               array(
-                'key'     => 'status',
-                'value'   => 'irb_pending_payment'
-              ),
-              array(
                 'key'     => 'type',
-                'value'   => 'invoice'
+                'value'   => array( 'invoice', 'internal_recurring' ),
+                'compare' => 'IN'
               ),
               array(
                 'key'     => 'rb_late_fee_notified',
@@ -242,19 +241,16 @@ namespace UsabilityDynamics\WPI_RB {
 
         $invoices_query = new \WP_Query(array(
             'post_type' => 'wpi_object',
-            'post_status' => 'any',
+            'post_status' => 'active',
             'date_query' => array(
                 'before' => "now -{$after_days} days"
             ),
             'meta_query' => array(
                 'relation' => 'AND',
                 array(
-                    'key'     => 'status',
-                    'value'   => 'irb_pending_payment'
-                ),
-                array(
                     'key'     => 'type',
-                    'value'   => 'invoice'
+                    'value'   => array( 'invoice', 'internal_recurring' ),
+                    'compare' => 'IN'
                 ),
                 array(
                     'key'     => 'rb_late_fee_applied',
