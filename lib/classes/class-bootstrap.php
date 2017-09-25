@@ -38,6 +38,7 @@ namespace UsabilityDynamics\WPI_RB {
         add_action( 'wpi_irb_invoice_copy', array( $this, 'remove_fee_on_copy' ) );
         add_filter( 'wpi_email_templates', array( $this, 'add_email_templates' ) );
         add_filter( 'wpi_rb_late_fee_notification_template', array( $this, 'process_notification_template' ) );
+        add_filter( 'wpi_rb_late_fee_application_notification_template', array( $this, 'process_notification_template' ) );
         add_filter( 'wpi_custom_meta', array( $this, 'allow_meta_keys' ) );
         add_action( 'wp_ajax_wpi_email_tracking', array( $this, 'email_tracker' ) );
         add_action( 'wp_ajax_nopriv_wpi_email_tracking', array( $this, 'email_tracker' ) );
@@ -47,8 +48,6 @@ namespace UsabilityDynamics\WPI_RB {
         if ( function_exists('ud_get_wp_invoice_irb') ) {
           add_action( ud_get_wp_invoice_irb()->cron_event_slug, array($this, 'trigger') );
         }
-
-        // For debug only add_action( 'init', array( $this, 'trigger' ) );
       }
 
       /**
@@ -221,7 +220,7 @@ namespace UsabilityDynamics\WPI_RB {
               update_post_meta( $template->invoice['ID'], 'rb_late_fee_notified', 1 );
               $_invoice = new \WPI_Invoice();
               $_invoice->load_invoice( array( 'id' => $template->invoice['ID'] ) );
-              $_invoice->add_entry("type=update&note=".__("Late Fee notifications has been sent.", ud_get_wp_invoice_rental_billing()->domain));
+              $_invoice->add_entry("type=update&note=".__("Late Invoice notifications has been sent.", ud_get_wp_invoice_rental_billing()->domain));
             }
 
           }
@@ -278,9 +277,42 @@ namespace UsabilityDynamics\WPI_RB {
               $_invoice = new \WPI_Invoice();
               $_invoice->load_invoice( array( 'id' => $invoice_post->ID ) );
               $_invoice->add_entry("type=update&note=".__("Late Fee has been charged.", ud_get_wp_invoice_rental_billing()->domain));
+
+              $this->send_late_fee_application_notification( $invoice_post );
             }
 
           }
+        }
+
+      }
+
+      /**
+       * @param $_invoice
+       * @return bool
+       */
+      public function send_late_fee_application_notification( $_invoice ) {
+
+        if ( !is_callable( array( '\WPI_Functions', 'preprocess_notification_template' ) ) ) return false;
+
+        $template = apply_filters( 'wpi_rb_late_fee_application_notification_template', \WPI_Functions::preprocess_notification_template( 'rb_late_fee_application', $_invoice->ID ), $_invoice->ID );
+
+        if ( !DOING_CRON ) return false;
+
+        //** Setup, and send our e-mail */
+        $headers = array(
+            "From: " . get_bloginfo() . " <" . get_bloginfo( 'admin_email' ) . ">\r\n"
+        );
+        $message = html_entity_decode( $template->ary['NotificationContent'], ENT_QUOTES, 'UTF-8' );
+        $subject = html_entity_decode( $template->ary['NotificationSubject'], ENT_QUOTES, 'UTF-8' );
+        $to = $template->invoice['user_email'];
+
+        //** Validate for empty fields data */
+        if ( empty( $to ) || empty( $subject ) || empty( $message ) ) return false;
+
+        if ( wp_mail( $to, $subject, apply_filters( 'wpi_notification_message', $message, $to, $subject, absint($template->invoice['invoice_id']) ), apply_filters( 'wpi_notification_headers', $headers, $to, $subject, absint($template->invoice['invoice_id']) ) ) ) {
+          $_invoice = new \WPI_Invoice();
+          $_invoice->load_invoice( array( 'id' => $template->invoice['ID'] ) );
+          $_invoice->add_entry("type=update&note=".__("Late Fee Application notification has been sent.", ud_get_wp_invoice_rental_billing()->domain));
         }
 
       }
@@ -296,8 +328,18 @@ namespace UsabilityDynamics\WPI_RB {
 
           $templates[ 'rb_late_fee' ] = array(
               'name' => __( 'RB - Client - Late Fee', ud_get_wp_invoice_rental_billing()->domain ),
-              'subject' => __( 'Late Fee - %subject%', ud_get_wp_invoice_rental_billing()->domain ),
+              'subject' => __( 'Late Invoice - %subject%', ud_get_wp_invoice_rental_billing()->domain ),
               'content' => __("Hello %recipient%,\n\nWe are notifying you about late invoice.\n\nView and pay the invoice by visiting the following link: %link%.\n\nLate fee is %late_fee%. Fee date %late_fee_date%.\n\nBest regards,\n%business_name% (%business_email%)", ud_get_wp_invoice_irb()->domain)
+          );
+
+        }
+
+        if ( !array_key_exists( 'rb_late_fee_application', $templates ) ) {
+
+          $templates[ 'rb_late_fee_application' ] = array(
+              'name' => __( 'RB - Client - Late Fee Application', ud_get_wp_invoice_rental_billing()->domain ),
+              'subject' => __( 'Late Fee - %subject%', ud_get_wp_invoice_rental_billing()->domain ),
+              'content' => __("Hello %recipient%,\n\nWe are notifying you about late fee charge.\n\nView and pay the invoice by visiting the following link: %link%.\n\nLate fee is %late_fee%. Fee date %late_fee_date%.\n\nBest regards,\n%business_name% (%business_email%)", ud_get_wp_invoice_irb()->domain)
           );
 
         }
@@ -320,6 +362,16 @@ namespace UsabilityDynamics\WPI_RB {
 
         if ( empty( $the_invoice->data['itemized_charges'] ) ) {
           unset( $the_invoice->data['itemized_charges'] );
+        }
+
+        if ( !empty( $the_invoice->data['rb_late_fee_applied'] ) ) {
+          unset( $the_invoice->data['rb_late_fee_applied'] );
+          delete_post_meta( $the_invoice->data['ID'], 'rb_late_fee_applied' );
+        }
+
+        if ( !empty( $the_invoice->data['rb_late_fee_notified'] ) ) {
+          unset( $the_invoice->data['rb_late_fee_notified'] );
+          delete_post_meta( $the_invoice->data['ID'], 'rb_late_fee_notified' );
         }
 
         $the_invoice->calculate_totals();
