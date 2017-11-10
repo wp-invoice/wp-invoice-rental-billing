@@ -264,12 +264,20 @@ namespace UsabilityDynamics\WPI_RB {
         foreach ( $invoices_query->posts as $invoice_post ) {
           if ($invoice_post->post_status == 'active') {
 
+            $event_amount = number_format( $amount, 2, '.', '' );
+
+            $core = \WPI_Core::getInstance();
+            $core->Functions->add_itemized_charge( $invoice_post->ID, WPI_RB_LATE_FEE_NAME, $event_amount, 0 );
+
             $the_invoice = new \WPI_Invoice();
             $the_invoice->load_invoice( array( 'id' => $invoice_post->ID ) );
 
-            $the_invoice->line_charge(array(
-                'name' => WPI_RB_LATE_FEE_NAME,
-                'amount' => number_format( $amount, 2, '.', '' )
+            $the_invoice->add_entry(array(
+                'attribute' => 'balance',
+                'note'      => 'Late fee charge item added',
+                'amount'    => $event_amount,
+                'type'      => 'add_charge',
+                'time'      => current_time('timestamp')
             ));
 
             if ( $the_invoice->save_invoice() ) {
